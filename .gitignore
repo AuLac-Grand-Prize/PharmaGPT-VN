@@ -1,0 +1,35 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+.env
+.env.local
+
+# Models, checkpoints, corpus — sync từ MinIO/HF mirror nội bộ
+models/
+data/raw/
+data/processed/
+data/corpus_vn_pharma/
+runs/
+*.safetensors
+*.bin
+*.gguf
+
+# wandb
+wandb/
+
+.ipynb_checkpoints/
