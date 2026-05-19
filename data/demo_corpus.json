@@ -1,0 +1,84 @@
+{
+  "_source": "Wikipedia tiếng Việt (Metformin, Paracetamol, Aspirin) — public domain, fetched for PharmaGPT-VN v0.2 demo.",
+  "_note": "Production corpus dùng Dược thư Quốc gia VN. Đây là tạm cho demo.",
+  "documents": [
+    {
+      "drug": "Metformin",
+      "source": "wikipedia_vi_metformin",
+      "sections": [
+        {
+          "title": "Chỉ định",
+          "text": "Metformin là thuốc điều trị đầu tay trong bệnh đái tháo đường týp 2, đặc biệt ở người thừa cân. Cũng được dùng để quản lý hội chứng buồng trứng đa nang (PCOS)."
+        },
+        {
+          "title": "Chống chỉ định",
+          "text": "Không dùng metformin ở bệnh nhân suy thận nặng (eGFR < 30 mL/phút/1,73m²) do tăng nguy cơ nhiễm toan lactic. Thận trọng khi eGFR 30-45: cần giảm liều và theo dõi chức năng thận. Chống chỉ định ở bệnh nhân suy gan nặng. Với đái tháo đường thai kỳ, insulin thường được ưu tiên hơn metformin."
+        },
+        {
+          "title": "Liều dùng",
+          "text": "Uống đường miệng. Liều khởi đầu thông thường 500mg x 1-2 lần/ngày sau ăn, tăng dần mỗi 1-2 tuần tới liều duy trì 1500-2000mg/ngày chia 2-3 lần. Liều tối đa 2550mg/ngày. Với eGFR 30-45 mL/phút: giới hạn liều ≤ 1000mg/ngày và đánh giá lại chức năng thận mỗi 3 tháng."
+        },
+        {
+          "title": "Thận trọng",
+          "text": "Theo dõi chức năng thận trước khi bắt đầu và ít nhất mỗi năm sau đó. Tạm ngừng metformin khi tiêm thuốc cản quang i-ốt, phẫu thuật lớn, nhiễm trùng nặng hoặc bất kỳ tình trạng nào có thể gây giảm tưới máu thận. Nồng độ acid lactic huyết thanh cần theo dõi nếu có dấu hiệu lâm sàng nghi ngờ nhiễm toan lactic."
+        },
+        {
+          "title": "Tác dụng không mong muốn",
+          "text": "Các tác dụng phụ thường gặp gồm tiêu chảy, buồn nôn, đau bụng, đầy hơi — thường giảm khi dùng cùng bữa ăn và tăng liều dần. Nguy cơ hạ đường huyết thấp khi dùng đơn trị. Hiếm gặp nhưng nghiêm trọng: nhiễm toan lactic. Có thể giảm hấp thu vitamin B12 nếu dùng lâu dài."
+        }
+      ]
+    },
+    {
+      "drug": "Paracetamol",
+      "source": "wikipedia_vi_paracetamol",
+      "sections": [
+        {
+          "title": "Chỉ định",
+          "text": "Paracetamol được dùng để giảm đau mức độ nhẹ đến vừa (đau đầu, đau cơ, đau răng) và hạ sốt. Có thể phối hợp với opioid để điều trị đau nặng hơn."
+        },
+        {
+          "title": "Liều dùng người lớn",
+          "text": "Người lớn: 500-1000mg mỗi 4-6 giờ khi cần, tối đa 4g (4000mg)/ngày. Khuyến nghị thực tế thường giới hạn 3-4g/ngày để giảm nguy cơ độc gan."
+        },
+        {
+          "title": "Liều dùng trẻ em",
+          "text": "Trẻ em: 10-15mg/kg/lần mỗi 4-6 giờ khi cần, tối đa 60mg/kg/ngày và không quá 4 liều/24 giờ. Ví dụ trẻ 4 tuổi nặng 18kg: liều mỗi lần 180-270mg (15mg/kg = 270mg), tổng tối đa khoảng 1080mg/ngày (60mg/kg)."
+        },
+        {
+          "title": "Chống chỉ định và thận trọng",
+          "text": "Chống chỉ định ở bệnh nhân suy gan nặng và dị ứng paracetamol. Thận trọng ở người nghiện rượu, suy dinh dưỡng, mất nước. Paracetamol có độc tính cao đối với mèo và không được dùng cho mèo trong bất kỳ trường hợp nào."
+        },
+        {
+          "title": "Quá liều và độc tính gan",
+          "text": "Liều > 4g/ngày người lớn (hoặc > 150mg/kg cho trẻ) có thể gây hoại tử tế bào gan, có thể tiến triển đến tử vong sau 5-6 ngày. N-acetylcysteine là thuốc giải độc chính, hiệu quả nhất nếu bắt đầu trong vòng 8 giờ sau quá liều. Nghi ngờ quá liều: chuyển cấp cứu ngay, định lượng paracetamol huyết tương 4 giờ sau uống."
+        }
+      ]
+    },
+    {
+      "drug": "Aspirin",
+      "source": "wikipedia_vi_aspirin",
+      "sections": [
+        {
+          "title": "Chỉ định",
+          "text": "Giảm đau mức độ nhẹ và vừa, hạ sốt: liều 1-3g/24h chia thành nhiều lần uống khi no. Liều cao 4-5g/24h dùng cho viêm. Liều thấp 75-100mg/ngày để dự phòng biến chứng tim mạch (chống ngưng tập tiểu cầu)."
+        },
+        {
+          "title": "Liều trẻ em",
+          "text": "Trẻ em 6-15 tuổi (chỉ khi có chỉ định đặc biệt): 0,3-0,9g/ngày chia 3-6 lần. Không dùng aspirin cho trẻ em dưới 12 tuổi trong nhiễm virus cấp do nguy cơ hội chứng Reye."
+        },
+        {
+          "title": "Chống chỉ định",
+          "text": "Chống chỉ định ở bệnh nhân có tiền sử hoặc hiện đang loét dạ dày - hành tá tràng do nguy cơ chảy máu tiêu hóa. Không dùng cho trẻ em dưới 12 tuổi vì nguy cơ hội chứng Reye. Các chống chỉ định khác: dị ứng aspirin/NSAID khác (ibuprofen, naproxen), rối loạn chảy máu (hemophilia), suy gan nặng, suy thận nặng, ba tháng cuối thai kỳ."
+        },
+        {
+          "title": "Tương tác thuốc",
+          "text": "Aspirin + warfarin: tăng nguy cơ chảy máu nghiêm trọng — cần theo dõi INR chặt và đánh giá lợi ích/nguy cơ. Aspirin + NSAID khác (ibuprofen, naproxen): tăng độc tính tiêu hóa, ibuprofen còn làm giảm tác dụng chống ngưng tập tiểu cầu của aspirin. Aspirin + rượu: tăng nguy cơ chảy máu dạ dày. Aspirin + thuốc hạ áp (ACEi, lợi tiểu): có thể giảm tác dụng hạ áp."
+        },
+        {
+          "title": "Tác dụng không mong muốn",
+          "text": "Thường gặp: khó tiêu, buồn nôn, đau thượng vị. Nghiêm trọng: loét dạ dày, chảy máu tiêu hóa, ù tai (dấu hiệu nhiễm độc salicylate), phản ứng dị ứng (hen aspirin), tăng nguy cơ chảy máu não trong dùng liều cao kéo dài."
+        }
+      ]
+    }
+  ]
+}

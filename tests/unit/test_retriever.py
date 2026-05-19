@@ -42,13 +42,22 @@ class _StubBackend:
         self.sparse = sparse
         self.dense_called_with: tuple | None = None
 
-    async def dense_search(self, vector: list[float], limit: int) -> list[RetrievedChunk]:
-        self.dense_called_with = (tuple(vector), limit)
+    async def dense_search(
+        self,
+        vector: list[float],
+        limit: int,
+        filters: dict[str, object] | None = None,
+    ) -> list[RetrievedChunk]:
+        self.dense_called_with = (tuple(vector), limit, filters)
         return self.dense
 
     async def sparse_search(
-        self, weights: dict[int, float], limit: int
+        self,
+        weights: dict[int, float],
+        limit: int,
+        filters: dict[str, object] | None = None,
     ) -> list[RetrievedChunk]:
+        self.sparse_filters = filters
         return self.sparse
 
 
@@ -68,3 +77,14 @@ async def test_hybrid_retrieve_uses_both_backends_and_returns_top_k() -> None:
 @pytest.mark.asyncio
 async def test_returns_empty_when_dependencies_missing() -> None:
     assert await HybridRetriever().retrieve("x", top_k=5) == []
+
+
+@pytest.mark.asyncio
+async def test_filters_are_passed_to_both_backends() -> None:
+    backend = _StubBackend(dense=[], sparse=[])
+    retriever = HybridRetriever(embedder=_StubEmbedder(), backend=backend)
+    filters = {"drug": "Metformin", "section": ["Liều", "CCĐ"]}
+    await retriever.retrieve("metformin", top_k=3, filters=filters)
+    assert backend.dense_called_with is not None
+    assert backend.dense_called_with[2] == filters
+    assert backend.sparse_filters == filters  # type: ignore[attr-defined]

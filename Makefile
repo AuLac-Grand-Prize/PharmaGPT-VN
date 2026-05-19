@@ -32,6 +32,14 @@ download-base-model:
 ingest-corpus:
 	$(VENV)/bin/python scripts/ingest_corpus.py --source data/corpus_vn_pharma/
 
+ingest-demo:
+	$(VENV)/bin/python scripts/ingest_corpus.py \
+		--source data/demo_corpus.json \
+		--embedder lexical \
+		--qdrant-url :memory: \
+		--collection pharmagpt_demo \
+		--dry-run
+
 train-sft:
 	$(VENV)/bin/python scripts/train_sft.py
 

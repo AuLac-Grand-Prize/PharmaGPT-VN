@@ -1,14 +1,20 @@
 """Cross-encoder re-ranker (Plan §3.4.4 Stage C).
 
 Wraps BGE-reranker-v2-m3 — runs only on a small candidate set so the cost is
-acceptable. Production loads the model once at startup; this module exposes the
-interface and a deterministic stub for tests.
+acceptable. Production loads the model once at startup; this module exposes
+both sync and async interfaces.
 """
 
+from __future__ import annotations
+
+import asyncio
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 
 from pharmagpt_vn.rag.retriever import RetrievedChunk
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -49,9 +55,22 @@ class CrossEncoderReranker:
                 [(query, c.text) for c in cand_list], normalize=True
             )
         except Exception:
-            # Fallback to retrieval order — keeps the pipeline runnable when the
-            # reranker model is missing (e.g. local dev without GPU).
+            # Production must know when the cross-encoder is silently bypassed —
+            # this is the difference between a working reranker and BM25 order
+            # leaking into the answer. Log loud, fall back deterministically.
+            logger.warning(
+                "reranker fallback: cross-encoder load/score failed; using retrieval order",
+                exc_info=True,
+            )
             scores = [c.score for c in cand_list]
         ranked = [RerankedChunk(chunk=c, rerank_score=float(s)) for c, s in zip(cand_list, scores)]
         ranked.sort(key=lambda x: x.rerank_score, reverse=True)
         return ranked[:top_k]
+
+    async def arerank(
+        self, query: str, candidates: Iterable[RetrievedChunk], top_k: int = 10
+    ) -> list[RerankedChunk]:
+        """Async wrapper: off-loads the GPU/CPU-bound scoring to a thread so it
+        doesn't block the event loop under concurrent /chat traffic."""
+        cand_list = list(candidates)
+        return await asyncio.to_thread(self.rerank, query, cand_list, top_k)

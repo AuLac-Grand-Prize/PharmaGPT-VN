@@ -6,6 +6,7 @@ import pytest
 
 from pharmagpt_vn.core.refusal import Classification
 from pharmagpt_vn.models.llm_client import GenerationRequest, GenerationResult
+from pharmagpt_vn.rag.crag import CRAGResult, RelevanceGrader
 from pharmagpt_vn.rag.reranker import CrossEncoderReranker, RerankedChunk
 from pharmagpt_vn.rag.retriever import HybridRetriever, RetrievedChunk
 from pharmagpt_vn.services.chat_service import ChatMessage, ChatService
@@ -51,6 +52,7 @@ def _service(
     classifier_label: str = "clinical_safe",
     llm_text: str = "",
     known_drugs: list[str] | None = None,
+    crag_grader: RelevanceGrader | None = None,
 ) -> ChatService:
     return ChatService(
         retriever=_StubRetriever(chunks or []),
@@ -59,7 +61,18 @@ def _service(
         llm=_LLM(llm_text),
         known_drugs=known_drugs or [],
         enforce_citations=True,
+        crag_grader=crag_grader,
     )
+
+
+class _FixedGrader:
+    """Returns a preset CRAG result regardless of input."""
+
+    def __init__(self, label, confidence: float = 1.0) -> None:
+        self._result = CRAGResult(label=label, confidence=confidence)
+
+    def grade(self, query, candidates) -> CRAGResult:
+        return self._result
 
 
 @pytest.mark.asyncio
@@ -143,3 +156,187 @@ async def test_pii_redaction_runs_before_retrieval() -> None:
     assert captured
     assert "0912345678" not in captured[0]
     assert "[PHONE]" in captured[0]
+
+
+@pytest.mark.asyncio
+async def test_crag_insufficient_refuses_before_generation() -> None:
+    chunks = [
+        RetrievedChunk(text="Đoạn không liên quan.", source="src", score=0.2, metadata={})
+    ]
+    svc = _service(
+        chunks=chunks,
+        llm_text="Không bao giờ được generate.",
+        crag_grader=_FixedGrader("insufficient"),
+    )
+    result = await svc.complete(
+        [ChatMessage(role="user", content="liều metformin cho người suy thận?")]
+    )
+    assert result.refused is True
+    assert result.finish_reason == "crag_insufficient"
+    assert result.trace is not None
+    assert result.trace.crag is not None
+    assert result.trace.crag.label == "insufficient"
+
+
+@pytest.mark.asyncio
+async def test_crag_sufficient_proceeds_to_generation() -> None:
+    chunks = [
+        RetrievedChunk(
+            text="Metformin chống chỉ định khi eGFR < 30.",
+            source="VN_pharmacopeia",
+            score=0.9,
+            metadata={},
+        )
+    ]
+    svc = _service(
+        chunks=chunks,
+        llm_text="Metformin nên giảm liều [REF:1].",
+        known_drugs=["Metformin"],
+        crag_grader=_FixedGrader("sufficient"),
+    )
+    result = await svc.complete(
+        [ChatMessage(role="user", content="liều metformin cho người suy thận?")]
+    )
+    assert result.refused is False
+    assert result.trace is not None and result.trace.crag is not None
+    assert result.trace.crag.label == "sufficient"
+
+
+class _SequencedRetriever(HybridRetriever):
+    """Returns a different chunk-list per call, in order."""
+
+    def __init__(self, sequences: list[list[RetrievedChunk]]) -> None:
+        self._sequences = sequences
+        self._i = 0
+        self.queries: list[str] = []
+
+    async def retrieve(self, query: str, top_k: int = 5, filters=None):  # type: ignore[override]
+        self.queries.append(query)
+        if self._i >= len(self._sequences):
+            return []
+        chunks = list(self._sequences[self._i][:top_k])
+        self._i += 1
+        return chunks
+
+
+class _SequencedGrader:
+    def __init__(self, labels: list[str]) -> None:
+        self._labels = labels
+        self._i = 0
+
+    def grade(self, query, candidates) -> CRAGResult:
+        label = self._labels[min(self._i, len(self._labels) - 1)]
+        self._i += 1
+        return CRAGResult(label=label, confidence=1.0)  # type: ignore[arg-type]
+
+
+class _FixedRewriter:
+    def __init__(self, rewrites: list[str]) -> None:
+        self._r = rewrites
+        self.calls: int = 0
+
+    def rewrite(self, query: str, n: int = 1) -> list[str]:
+        self.calls += 1
+        return list(self._r[:n])
+
+
+@pytest.mark.asyncio
+async def test_crag_retry_rewrites_query_when_initial_grade_insufficient() -> None:
+    weak = [RetrievedChunk(text="weak", source="s1", score=0.1, metadata={})]
+    strong = [
+        RetrievedChunk(
+            text="Metformin chống chỉ định khi eGFR < 30.",
+            source="VN_pharmacopeia",
+            score=0.9,
+            metadata={},
+        )
+    ]
+    retriever = _SequencedRetriever([weak, strong])
+    grader = _SequencedGrader(["insufficient", "sufficient"])
+    rewriter = _FixedRewriter(["metformin trong suy thận eGFR thấp"])
+    svc = ChatService(
+        retriever=retriever,
+        reranker=_PassthroughReranker(),
+        refusal_classifier=_Classifier("clinical_safe"),
+        llm=_LLM("Metformin giảm liều khi suy thận [REF:1]."),
+        known_drugs=["Metformin"],
+        enforce_citations=True,
+        crag_grader=grader,
+        query_rewriter=rewriter,
+        crag_max_retries=1,
+    )
+    result = await svc.complete(
+        [ChatMessage(role="user", content="liều metformin cho người suy thận?")]
+    )
+    assert result.refused is False
+    assert rewriter.calls == 1
+    assert result.trace is not None
+    assert result.trace.retries_used == 1
+    assert result.trace.rewritten_query == "metformin trong suy thận eGFR thấp"
+    assert result.trace.crag is not None
+    assert result.trace.crag.label == "sufficient"
+
+
+@pytest.mark.asyncio
+async def test_crag_retry_exhausts_then_refuses() -> None:
+    weak1 = [RetrievedChunk(text="w1", source="s1", score=0.1, metadata={})]
+    weak2 = [RetrievedChunk(text="w2", source="s2", score=0.1, metadata={})]
+    retriever = _SequencedRetriever([weak1, weak2])
+    grader = _SequencedGrader(["insufficient", "insufficient"])
+    rewriter = _FixedRewriter(["alt phrasing"])
+    svc = ChatService(
+        retriever=retriever,
+        reranker=_PassthroughReranker(),
+        refusal_classifier=_Classifier("clinical_safe"),
+        llm=_LLM("never reached"),
+        enforce_citations=True,
+        crag_grader=grader,
+        query_rewriter=rewriter,
+        crag_max_retries=1,
+    )
+    result = await svc.complete(
+        [ChatMessage(role="user", content="liều metformin cho người suy thận?")]
+    )
+    assert result.refused is True
+    assert result.finish_reason == "crag_insufficient"
+    assert result.trace is not None and result.trace.retries_used == 1
+
+
+@pytest.mark.asyncio
+async def test_crag_no_retry_when_rewriter_missing() -> None:
+    weak = [RetrievedChunk(text="w", source="s", score=0.1, metadata={})]
+    retriever = _SequencedRetriever([weak])
+    grader = _SequencedGrader(["insufficient"])
+    svc = ChatService(
+        retriever=retriever,
+        reranker=_PassthroughReranker(),
+        refusal_classifier=_Classifier("clinical_safe"),
+        llm=_LLM("never reached"),
+        enforce_citations=True,
+        crag_grader=grader,
+        query_rewriter=None,
+        crag_max_retries=3,
+    )
+    result = await svc.complete(
+        [ChatMessage(role="user", content="liều metformin cho người suy thận?")]
+    )
+    assert result.refused is True
+    assert result.trace is not None and result.trace.retries_used == 0
+
+
+@pytest.mark.asyncio
+async def test_crag_skipped_for_non_clinical_queries() -> None:
+    chunks = [RetrievedChunk(text="x", source="s", score=0.9, metadata={})]
+    # Grader would refuse, but non-clinical query should bypass it.
+    svc = ChatService(
+        retriever=_StubRetriever(chunks),
+        reranker=_PassthroughReranker(),
+        refusal_classifier=_Classifier("clinical_safe"),
+        llm=_LLM("Hello [REF:1]."),
+        enforce_citations=False,
+        crag_grader=_FixedGrader("insufficient"),
+    )
+    # Question has no clinical keywords → is_clinical=False → CRAG bypassed.
+    result = await svc.complete([ChatMessage(role="user", content="Xin chào")])
+    assert result.refused is False
+    assert result.trace is not None and result.trace.crag is None
