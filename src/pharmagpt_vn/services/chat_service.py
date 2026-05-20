@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Literal
@@ -28,9 +29,15 @@ from pharmagpt_vn.core.validators import (
 )
 from pharmagpt_vn.models.llm_client import GenerationRequest, LLMClient
 from pharmagpt_vn.rag.crag import CRAGResult, RelevanceGrader
-from pharmagpt_vn.rag.query_rewrite import QueryRewriter
-from pharmagpt_vn.rag.reranker import CrossEncoderReranker, RerankedChunk
-from pharmagpt_vn.rag.retriever import HybridRetriever, RetrievedChunk
+from pharmagpt_vn.rag.hyde import HyDEGenerator
+from pharmagpt_vn.rag.query_decompose import Decomposer
+from pharmagpt_vn.rag.query_rewrite import MultiQueryRetriever, QueryRewriter
+from pharmagpt_vn.rag.reranker import Reranker, RerankedChunk
+from pharmagpt_vn.rag.retriever import (
+    HybridRetriever,
+    RetrievedChunk,
+    reciprocal_rank_fusion,
+)
 from pharmagpt_vn.services.prompt import build_chat_prompt
 
 
@@ -67,7 +74,7 @@ class ChatService:
     def __init__(
         self,
         retriever: HybridRetriever,
-        reranker: CrossEncoderReranker,
+        reranker: Reranker,
         refusal_classifier: RefusalClassifier,
         llm: LLMClient,
         known_drugs: Iterable[str] = (),
@@ -78,6 +85,11 @@ class ChatService:
         query_rewriter: QueryRewriter | None = None,
         crag_max_retries: int = 1,
         tracer: Tracer | None = None,
+        multi_query_retriever: MultiQueryRetriever | None = None,
+        decomposer: Decomposer | None = None,
+        hyde: HyDEGenerator | None = None,
+        per_branch_top_k: int = 30,
+        rrf_k: int = 60,
     ) -> None:
         self._retriever = retriever
         self._reranker = reranker
@@ -91,6 +103,11 @@ class ChatService:
         self._query_rewriter = query_rewriter
         self._crag_max_retries = max(0, crag_max_retries)
         self._tracer = tracer or NoopTracer()
+        self._multi_query_retriever = multi_query_retriever
+        self._decomposer = decomposer
+        self._hyde = hyde
+        self._per_branch_top_k = per_branch_top_k
+        self._rrf_k = rrf_k
 
     async def complete(
         self,
@@ -133,7 +150,7 @@ class ChatService:
 
         if self._always_on_rag or is_clinical:
             retrieved, reranked = await self._retrieve_and_rerank(
-                active_query, retrieve_pool, rerank_keep
+                active_query, retrieve_pool, rerank_keep, is_clinical=is_clinical
             )
             # CRAG retry-with-rewrite (Yan et al. 2024 §3.2): when the grader
             # is unsure, give retrieval one more chance with a rewritten query
@@ -154,7 +171,7 @@ class ChatService:
                         break
                     rewritten_query = rewrites[0]
                     new_retrieved, new_reranked = await self._retrieve_and_rerank(
-                        rewritten_query, retrieve_pool, rerank_keep
+                        rewritten_query, retrieve_pool, rerank_keep, is_clinical=is_clinical
                     )
                     if not new_reranked:
                         retries_used += 1
@@ -271,10 +288,16 @@ class ChatService:
         )
 
     async def _retrieve_and_rerank(
-        self, query: str, retrieve_pool: int, rerank_keep: int
+        self,
+        query: str,
+        retrieve_pool: int,
+        rerank_keep: int,
+        is_clinical: bool = False,
     ) -> tuple[list[RetrievedChunk], list[RerankedChunk]]:
         with self._tracer.start_span("retrieve", top_k=retrieve_pool) as sp:
-            retrieved = await self._retriever.retrieve(query, top_k=retrieve_pool)
+            retrieved = await self._understand_and_retrieve(
+                query, is_clinical, retrieve_pool
+            )
             sp.set_attribute("hits", len(retrieved))
         with self._tracer.start_span("rerank", keep=rerank_keep) as sp:
             reranked = await self._reranker.arerank(query, retrieved, top_k=rerank_keep)
@@ -282,6 +305,60 @@ class ChatService:
             if reranked:
                 sp.set_attribute("top_score", reranked[0].rerank_score)
         return retrieved, reranked
+
+    async def _understand_and_retrieve(
+        self, query: str, is_clinical: bool, final_top_k: int
+    ) -> list[RetrievedChunk]:
+        """Query understanding layer — runs up to 3 branches in parallel and
+        fuses with RRF. When no QU components are wired, falls back to a single
+        retriever.retrieve() call (preserves legacy/test behavior).
+        """
+        has_multi = self._multi_query_retriever is not None
+        has_decomposer = self._decomposer is not None
+        has_hyde = is_clinical and self._hyde is not None
+
+        if not (has_multi or has_decomposer or has_hyde):
+            return await self._retriever.retrieve(query, top_k=final_top_k)
+
+        per_top_k = self._per_branch_top_k
+
+        async def branch_a() -> list[RetrievedChunk]:
+            if has_multi:
+                return await self._multi_query_retriever.retrieve(  # type: ignore[union-attr]
+                    query, top_k=per_top_k
+                )
+            return await self._retriever.retrieve(query, top_k=per_top_k)
+
+        async def branch_b() -> list[RetrievedChunk]:
+            if not has_decomposer:
+                return []
+            sub_queries = self._decomposer.decompose(query)  # type: ignore[union-attr]
+            # Skip when decomposer couldn't break the query — falling back here
+            # would just duplicate Branch A's work.
+            if len(sub_queries) <= 1 and (not sub_queries or sub_queries[0] == query):
+                return []
+            tasks = [
+                self._retriever.retrieve(sq, top_k=per_top_k) for sq in sub_queries
+            ]
+            results = await asyncio.gather(*tasks)
+            fused = reciprocal_rank_fusion(*results, k=self._rrf_k)
+            return fused[:per_top_k]
+
+        async def branch_c() -> list[RetrievedChunk]:
+            if not has_hyde:
+                return []
+            hyde_doc = await self._hyde.generate(query)  # type: ignore[union-attr]
+            if not hyde_doc:
+                return []
+            return await self._retriever.retrieve(hyde_doc, top_k=per_top_k)
+
+        with self._tracer.start_span("query_understanding") as sp:
+            a, b, c = await asyncio.gather(branch_a(), branch_b(), branch_c())
+            sp.set_attribute("branch_a_hits", len(a))
+            sp.set_attribute("branch_b_hits", len(b))
+            sp.set_attribute("branch_c_hits", len(c))
+        fused = reciprocal_rank_fusion(a, b, c, k=self._rrf_k)
+        return fused[:final_top_k]
 
     def _run_validators(self, text: str, available_refs: set[int]) -> list[ValidationResult]:
         results: list[ValidationResult] = []

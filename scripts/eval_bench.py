@@ -18,8 +18,8 @@ from pharmagpt_vn.core.config import get_settings
 from pharmagpt_vn.evaluation import BenchmarkRunner, load_jsonl
 from pharmagpt_vn.evaluation.benchmark import report_to_json
 from pharmagpt_vn.evaluation.judges import SubstringJudge
-from pharmagpt_vn.models.vllm_client import VLLMClient
-from pharmagpt_vn.rag.reranker import CrossEncoderReranker
+from pharmagpt_vn.models.openai_client import OpenAIClient
+from pharmagpt_vn.rag.openrouter_reranker import OpenRouterReranker
 from pharmagpt_vn.rag.retriever import HybridRetriever
 from pharmagpt_vn.services.chat_service import ChatService
 
@@ -32,9 +32,17 @@ def _build_chat() -> ChatService:
             collection=s.qdrant_collection,
             embedding_model=s.embedding_model,
         ),
-        reranker=CrossEncoderReranker(),
+        reranker=OpenRouterReranker(
+            api_key=s.openrouter_api_key,
+            model=s.reranker_model,
+            base_url=s.openrouter_base_url,
+        ),
         refusal_classifier=_default_classifier(),
-        llm=VLLMClient(base_url=f"http://localhost:{s.app_port}", model=s.base_model),
+        llm=OpenAIClient(
+            base_url=s.openai_base_url,
+            api_key=s.openai_api_key,
+            model=s.llm_model_main,
+        ),
     )
 
 

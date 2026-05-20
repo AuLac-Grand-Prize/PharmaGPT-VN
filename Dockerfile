@@ -1,9 +1,9 @@
-FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 python3.11-venv python3-pip curl git && \
+    curl git && \
     rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md ./

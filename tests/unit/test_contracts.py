@@ -16,7 +16,7 @@ FIXTURE = Path(__file__).parent.parent / "fixtures" / "disambiguation_example.js
 
 
 def test_fixture_parses() -> None:
-    payload = json.loads(FIXTURE.read_text())
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
     req = DisambiguationRequest.model_validate(payload)
     assert req.task == "drug_disambiguation"
     assert req.contract_version == CONTRACT_VERSION
@@ -26,7 +26,7 @@ def test_fixture_parses() -> None:
 
 
 def test_request_rejects_extra_fields() -> None:
-    payload = json.loads(FIXTURE.read_text())
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
     payload["surprise_field"] = "should fail"
     with pytest.raises(ValueError):
         DisambiguationRequest.model_validate(payload)

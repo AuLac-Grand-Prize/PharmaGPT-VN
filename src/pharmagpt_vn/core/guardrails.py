@@ -3,7 +3,7 @@
 import re
 
 CCCD_PATTERN = re.compile(r"\b\d{12}\b")
-PHONE_PATTERN = re.compile(r"\b(0|\+84)\d{9,10}\b")
+PHONE_PATTERN = re.compile(r"(?<!\d)(?:0|\+84)\d{9,10}(?!\d)")
 BHYT_PATTERN = re.compile(r"\b[A-Z]{2}\d{13}\b")
 
 CLINICAL_KEYWORDS = (

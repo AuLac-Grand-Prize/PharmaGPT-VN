@@ -11,6 +11,7 @@ import asyncio
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Protocol
 
 from pharmagpt_vn.rag.retriever import RetrievedChunk
 
@@ -21,6 +22,16 @@ logger = logging.getLogger(__name__)
 class RerankedChunk:
     chunk: RetrievedChunk
     rerank_score: float
+
+
+class Reranker(Protocol):
+    def rerank(
+        self, query: str, candidates: Iterable[RetrievedChunk], top_k: int = 10
+    ) -> list[RerankedChunk]: ...
+
+    async def arerank(
+        self, query: str, candidates: Iterable[RetrievedChunk], top_k: int = 10
+    ) -> list[RerankedChunk]: ...
 
 
 class CrossEncoderReranker:

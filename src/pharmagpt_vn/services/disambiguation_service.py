@@ -28,7 +28,7 @@ from pharmagpt_vn.contracts.disambiguation import (
     RankedCandidate,
 )
 from pharmagpt_vn.models.llm_client import GenerationRequest, LLMClient
-from pharmagpt_vn.rag.reranker import CrossEncoderReranker, RerankedChunk
+from pharmagpt_vn.rag.reranker import Reranker, RerankedChunk
 from pharmagpt_vn.rag.retriever import HybridRetriever, RetrievedChunk
 
 log = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class DisambiguationService:
     def __init__(
         self,
         retriever: HybridRetriever,
-        reranker: CrossEncoderReranker | None = None,
+        reranker: Reranker | None = None,
         llm: LLMClient | None = None,
         chunks_per_candidate: int = 3,
     ) -> None:

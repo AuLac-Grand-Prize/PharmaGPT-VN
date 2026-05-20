@@ -16,12 +16,10 @@ PharmaGPT-VN là LLM **chuyên ngành dược tiếng Việt**, fine-tune từ m
 
 ## 2. Công nghệ lõi
 
-- **Base model**: Llama 3.1 8B / Qwen 2.5 7B / Vistral 7B / PhoGPT — chọn theo benchmark nội bộ.
-- **Domain adaptation**: Tiếp tục pre-train trên **corpus 10 triệu token** y dược tiếng Việt (Dược điển VN, hướng dẫn điều trị Bộ Y tế, tờ rơi thuốc, tạp chí chuyên ngành).
-- **Instruction tuning**: 50.000+ cặp Q&A do dược sĩ lâm sàng VN biên soạn.
+- **LLM**: gọi qua **API tương thích OpenAI** (endpoint cấu hình qua `OPENAI_BASE_URL` + `LLM_MODEL_MAIN`). App không tự host model — toàn bộ trọng số nằm ở phía gateway/provider.
 - **RAG pipeline** với **Qdrant** vector store + **bge-m3** Vietnamese embedding → augment câu trả lời từ database dược đã kiểm duyệt, tránh hallucination.
-- **Inference**: **vLLM** với continuous batching trên A100/H100 tại data center FPT/Viettel.
-- **Guardrails**: Đầu ra clinical phải có citation; câu trả lời ngoài scope dược chuyển hướng về dược sĩ thật.
+- **Reranker**: BGE-reranker-v2-m3 (cross-encoder) — chạy local (CPU/GPU tùy môi trường).
+- **Guardrails**: Đầu ra clinical phải có citation; câu hỏi ngoài scope dược chuyển hướng về dược sĩ thật.
 
 ## 3. KPIs mục tiêu
 
@@ -29,8 +27,7 @@ PharmaGPT-VN là LLM **chuyên ngành dược tiếng Việt**, fine-tune từ m
 |--------|----------|
 | VietPharmaBench (nội bộ) — accuracy | Vượt GPT-4 |
 | Hallucination rate (RAGAS faithfulness) | ≤ 3% |
-| Latency p95 (8B model, vLLM) | ≤ 2 giây |
-| Chi phí / 1M token (so với GPT-4 API) | ≤ 1/10 |
+| Latency p95 (end-to-end RAG + LLM API) | ≤ 2 giây |
 | % câu trả lời có citation | 100% (clinical) |
 
 ## 4. Cấu trúc thư mục
@@ -41,17 +38,15 @@ pharmagpt-vn/
 │   ├── api/              # FastAPI: /chat, /completions, /embed
 │   │   └── routes/
 │   ├── core/             # Config, logging, guardrails
-│   ├── models/           # Model loader (vLLM, transformers)
+│   ├── models/           # LLM client (OpenAI-compatible)
 │   ├── services/         # Chat orchestrator
 │   ├── rag/              # Retrieval pipeline
 │   │   ├── retriever.py  # Qdrant + bge-m3
 │   │   ├── reranker.py   # Cross-encoder
 │   │   └── chunker.py
-│   ├── training/         # SFT, DPO, continued pre-training
 │   └── evaluation/       # VietPharmaBench harness
 ├── tests/
-├── notebooks/
-├── scripts/              # build_corpus, train_sft, eval_bench
+├── scripts/              # ingest_corpus, eval_bench, demo_backend
 └── data/                 # (gitignored)
 ```
 
@@ -98,14 +93,14 @@ Response:
 
 ### Yêu cầu
 - Python 3.11+
-- (Inference) GPU NVIDIA A100/H100 ≥ 40GB hoặc 2× RTX 4090
-- (Training) 4× A100 80GB tối thiểu
+- Endpoint LLM tương thích OpenAI (URL + API key)
+- Qdrant + Redis (qua `docker compose`)
 
 ### Setup
 ```bash
 cp .env.example .env
+# Điền OPENAI_BASE_URL, OPENAI_API_KEY, LLM_MODEL_MAIN vào .env
 make install
-make download-base-model     # tải base model từ HF mirror nội bộ
 make services-up             # qdrant + redis
 make ingest-corpus           # nạp corpus y dược vào Qdrant
 make dev                     # FastAPI tại http://localhost:8003
@@ -117,23 +112,7 @@ make test
 make eval                    # chạy VietPharmaBench
 ```
 
-## 7. Training pipeline
-
-```bash
-# 1. Tiếp tục pre-train trên corpus dược tiếng Việt (10M token)
-python scripts/continued_pretrain.py --corpus data/corpus_vn_pharma/ --epochs 1
-
-# 2. SFT trên 50K instruction pairs do dược sĩ biên soạn
-python scripts/train_sft.py --data data/sft_pairs.jsonl --epochs 3
-
-# 3. DPO với preference data
-python scripts/train_dpo.py --data data/dpo_pairs.jsonl
-
-# 4. Eval
-python scripts/eval_bench.py --benchmark vietpharma_bench_v1
-```
-
-## 8. Guardrails y khoa
+## 7. Guardrails y khoa
 
 Mỗi response đi qua 4 lớp guardrail:
 1. **PII redaction** — loại số CCCD, số thẻ BHYT, SĐT trước khi log.
@@ -141,15 +120,8 @@ Mỗi response đi qua 4 lớp guardrail:
 3. **Citation enforcement** — câu trả lời clinical bắt buộc có ít nhất 1 citation từ Qdrant.
 4. **Disclaimer** — mỗi response đính kèm cảnh báo "AI hỗ trợ tham khảo, không thay thế chẩn đoán dược sĩ".
 
-## 9. Cam kết mở
+## 8. Roadmap
 
-Một phần checkpoint v1 sẽ được mở cho **cộng đồng nghiên cứu AI Việt Nam** dưới giấy phép research-only — đóng góp cho hệ sinh thái AI tiếng Việt:
-- HuggingFace Hub: `pharmlink/pharmagpt-vn-8b-research`
-- Corpus đã làm sạch một phần: `pharmlink/vn-pharma-corpus-mini`
-
-## 10. Roadmap
-
-- **v0.1** (MVP): 7B model, RAG cơ bản, latency 3s.
-- **v0.2**: Domain-adapted, instruction-tuned, latency 2s.
-- **v1.0**: DPO + tool-use (gọi VietDrug AI làm tool), multi-turn dialogue.
-- **v2.0**: 70B variant cho enterprise hospitals, on-prem deploy.
+- **v0.1** (MVP): RAG cơ bản qua LLM API, latency 3s.
+- **v0.2**: Pipeline hoàn chỉnh (hybrid retrieve → rerank → CRAG → generate), latency 2s.
+- **v1.0**: Tool-use (gọi VietDrug AI làm tool), multi-turn dialogue.

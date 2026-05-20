@@ -151,11 +151,12 @@ async def test_pii_redaction_runs_before_retrieval() -> None:
         enforce_citations=True,
     )
     await svc.complete(
-        [ChatMessage(role="user", content="metformin SĐT 0912345678 cho bệnh nhân")]
+        [ChatMessage(role="user", content="metformin SĐT 0912345678 hoặc +84987654321 cho bệnh nhân")]
     )
     assert captured
     assert "0912345678" not in captured[0]
-    assert "[PHONE]" in captured[0]
+    assert "+84987654321" not in captured[0]
+    assert captured[0].count("[PHONE]") == 2
 
 
 @pytest.mark.asyncio
@@ -322,6 +323,118 @@ async def test_crag_no_retry_when_rewriter_missing() -> None:
     )
     assert result.refused is True
     assert result.trace is not None and result.trace.retries_used == 0
+
+
+class _RecordingRetriever(HybridRetriever):
+    """Records every query passed in and returns a deterministic chunk per query."""
+
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    async def retrieve(self, query: str, top_k: int = 5, filters=None):  # type: ignore[override]
+        self.queries.append(query)
+        # Unique chunk per query so RRF fusion has multiple distinct sources to fuse.
+        return [
+            RetrievedChunk(
+                text=f"chunk for: {query}",
+                source=f"src::{abs(hash(query)) % 10000}",
+                score=0.9,
+                metadata={},
+            )
+        ]
+
+
+class _StubDecomposer:
+    def __init__(self, sub_queries: list[str]) -> None:
+        self._sub = sub_queries
+
+    def decompose(self, query: str) -> list[str]:
+        return list(self._sub)
+
+
+class _StubHyDE:
+    def __init__(self, doc: str = "hypothetical doc body") -> None:
+        self._doc = doc
+        self.called = 0
+
+    async def generate(self, query: str) -> str:
+        self.called += 1
+        return self._doc
+
+
+@pytest.mark.asyncio
+async def test_3branch_runs_all_branches_for_clinical_query() -> None:
+    retriever = _RecordingRetriever()
+    decomposer = _StubDecomposer(["sub query 1", "sub query 2"])
+    hyde = _StubHyDE(doc="hyde fake answer about metformin")
+
+    svc = ChatService(
+        retriever=retriever,
+        reranker=_PassthroughReranker(),
+        refusal_classifier=_Classifier("clinical_safe"),
+        llm=_LLM("Metformin giảm liều [REF:1]."),
+        known_drugs=["Metformin"],
+        enforce_citations=True,
+        decomposer=decomposer,
+        hyde=hyde,
+        per_branch_top_k=10,
+    )
+    result = await svc.complete(
+        [ChatMessage(role="user", content="liều metformin cho người suy thận?")]
+    )
+    assert result.refused is False
+    # Branch A original query + Branch B 2 sub_queries + Branch C 1 hyde doc = 4 retrieves
+    assert len(retriever.queries) == 4
+    assert "liều metformin cho người suy thận?" in retriever.queries
+    assert "sub query 1" in retriever.queries
+    assert "sub query 2" in retriever.queries
+    assert "hyde fake answer about metformin" in retriever.queries
+    assert hyde.called == 1
+
+
+@pytest.mark.asyncio
+async def test_3branch_skips_hyde_for_non_clinical_query() -> None:
+    retriever = _RecordingRetriever()
+    decomposer = _StubDecomposer(["sub_a"])
+    hyde = _StubHyDE()
+
+    svc = ChatService(
+        retriever=retriever,
+        reranker=_PassthroughReranker(),
+        refusal_classifier=_Classifier("clinical_safe"),
+        llm=_LLM("Xin chào [REF:1]."),
+        enforce_citations=False,
+        decomposer=decomposer,
+        hyde=hyde,
+    )
+    # "Xin chào" has no clinical keywords → is_clinical=False → Branch C skip
+    await svc.complete([ChatMessage(role="user", content="Xin chào")])
+    assert hyde.called == 0
+    # Branch A (original) + Branch B (1 sub) = 2 retrieves
+    assert len(retriever.queries) == 2
+
+
+@pytest.mark.asyncio
+async def test_3branch_falls_back_when_hyde_returns_empty() -> None:
+    retriever = _RecordingRetriever()
+    hyde = _StubHyDE(doc="")  # LLM returned empty / failed
+    svc = ChatService(
+        retriever=retriever,
+        reranker=_PassthroughReranker(),
+        refusal_classifier=_Classifier("clinical_safe"),
+        llm=_LLM("Metformin giảm liều [REF:1]."),
+        known_drugs=["Metformin"],
+        enforce_citations=True,
+        hyde=hyde,
+    )
+    result = await svc.complete(
+        [ChatMessage(role="user", content="liều metformin?")]
+    )
+    assert result.refused is False
+    # Branch A only (no decomposer); HyDE called but produced no doc → branch C skipped retrieve
+    queries = retriever.queries
+    assert "liều metformin?" in queries
+    assert "" not in queries
 
 
 @pytest.mark.asyncio

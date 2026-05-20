@@ -10,14 +10,23 @@ class Settings(BaseSettings):
     app_port: int = 8003
     log_level: str = "INFO"
 
-    base_model: str
-    adapter_path: str | None = None
-    device: str = "cuda"
-    dtype: str = "bfloat16"
-    max_model_len: int = 8192
-    gpu_memory_utilization: float = 0.85
+    openai_base_url: str
+    openai_api_key: str
+    llm_model_main: str
 
     embedding_model: str
+    embedder_device: str = "cpu"
+
+    openrouter_api_key: str
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    reranker_model: str = "cohere/rerank-v3.5"
+
+    qu_rewrite_n: int = 3
+    qu_decompose_max: int = 4
+    qu_hyde_enabled: bool = True
+    qu_hyde_max_tokens: int = 256
+    qu_per_branch_top_k: int = 30
+    qu_rrf_k: int = 60
 
     qdrant_url: str
     qdrant_api_key: str | None = None
