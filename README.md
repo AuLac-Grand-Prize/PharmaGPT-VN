@@ -231,3 +231,20 @@ docker build -t pharmagpt-vn . # build API image
 - **v0.1** (MVP): basic RAG via LLM API, 3s latency.
 - **v0.2**: full pipeline (hybrid retrieve → 3-branch QU → rerank → CRAG → generate), 2s latency.
 - **v1.0**: tool use (call VietDrug AI as a tool), multi-turn dialogue.
+
+---
+
+## About PharmLink AI
+
+This repository is **Engine 3 / 4** of [**PharmLink AI**](https://github.com/AuLac-Grand-Prize) — Vietnam's *Made-in-Vietnam* pharmaceutical AI platform serving 60,000+ pharmacies and up to 100 million citizens, in service of medication safety and national health-data sovereignty.
+
+**The platform:**
+- 💊 [VietDrug AI](https://github.com/AuLac-Grand-Prize/Pharma-VietDrugAI) — drug-interaction checks
+- 📝 [PrescriptionVision](https://github.com/AuLac-Grand-Prize/Pharma-PrescriptionVision) — handwritten-prescription OCR
+- 🤖 **PharmaGPT-VN** — Vietnamese pharma assistant *(this repo)*
+- 📈 [DemandForecast AI](https://github.com/AuLac-Grand-Prize/Pharma-DemandForecast) — demand forecasting
+- 🖥️ [Pharma Portal](https://github.com/AuLac-Grand-Prize/Pharma-Portal) — the pharmacist workspace
+
+**Technology ownership:** the 10M+ token Vietnamese pharma corpus and the fine-tuned model weights are proprietary IP — deployable on-premise for institutions requiring maximum confidentiality; patient conversations never leave Vietnam.
+
+> **Disclaimer:** PharmLink AI augments pharmacists — it does not replace them. Every clinical decision rests with a licensed pharmacist; outputs are validated by the Vietnamese Clinical Pharmacist Scientific Council.
