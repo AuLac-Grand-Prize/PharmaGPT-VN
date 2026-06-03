@@ -1,45 +1,45 @@
-# PharmaGPT-VN — LLM tiếng Việt chuyên ngành dược
+# PharmaGPT-VN — Vietnamese pharma-domain LLM assistant
 
-> **Engine 3 / 4 của nền tảng PharmLink AI.**
-> RAG tiếng Việt chuyên ngành dược + 3-branch query understanding + Corrective RAG → trợ lý dược sĩ AI 24/7, có trích dẫn nguồn.
+> **Engine 3 / 4 of the PharmLink AI platform.**
+> Vietnamese pharma-domain RAG + 3-branch query understanding + Corrective RAG → a 24/7 AI pharmacist assistant with cited sources.
 
 ---
 
-## 1. Vấn đề giải quyết
+## 1. Problem it solves
 
-GPT-4 và các LLM nước ngoài:
-- Không hiểu thuật ngữ y dược tiếng Việt (biệt dược VN, hướng dẫn của Bộ Y tế).
-- Yêu cầu gửi dữ liệu hội thoại bệnh nhân ra cloud nước ngoài → vi phạm chủ quyền dữ liệu y tế.
-- Chi phí cao, latency cao.
+GPT-4 and other foreign LLMs:
+- Don't understand Vietnamese medical/pharma terminology (local brand drugs, Ministry of Health guidelines).
+- Require sending patient conversation data to overseas clouds → violating health-data sovereignty.
+- Are expensive and high-latency.
 
-PharmaGPT-VN là hệ **RAG chuyên ngành dược tiếng Việt**: grounding câu trả lời trên corpus đã kiểm duyệt (dược điển VN, hướng dẫn BYT), validate bằng Corrective RAG để **từ chối khi thiếu bằng chứng**, redact PII và đính kèm disclaimer y khoa.
+PharmaGPT-VN is a **Vietnamese pharma-domain RAG system**: it grounds answers on a vetted corpus (VN pharmacopoeia, MoH guidelines), validates with Corrective RAG to **refuse when evidence is insufficient**, redacts PII, and appends a medical disclaimer.
 
-## 2. Công nghệ lõi
+## 2. Core technology
 
-- **LLM**: gọi qua **API tương thích OpenAI** (`OPENAI_BASE_URL` + `LLM_MODEL_MAIN`). App không tự host model.
+- **LLM**: called via an **OpenAI-compatible API** (`OPENAI_BASE_URL` + `LLM_MODEL_MAIN`). The app does not self-host the model.
 - **Hybrid retrieval**: **Qdrant** vector store + **BGE-M3** (dense + sparse) → RRF fusion.
-- **3-branch query understanding** (chạy song song cho câu hỏi lâm sàng):
-  - **MultiQueryRetriever** — `HeuristicVNRewriter` (cặp đồng nghĩa VN) + `LLMQueryRewriter` (n=3).
-  - **HeuristicVNDecomposer** — tách câu hỏi đa thuốc / thuốc × bối cảnh lâm sàng thành sub-query.
-  - **HyDEGenerator** — sinh "tài liệu giả định" để tăng recall (chỉ bật khi `is_clinical_query`).
-- **Reranker**: **OpenRouterReranker** (Cohere `rerank-v3.5` mặc định, cấu hình qua `RERANKER_MODEL`); có `Reranker` Protocol để chat/disambiguation bind theo interface.
-- **Corrective RAG (CRAG)**: `TieredGrader` (heuristic trước, LLM khi mơ hồ) phân loại sufficient/ambiguous/insufficient → từ chối khi không đủ bằng chứng.
-- **Guardrails**: redact PII, citation enforcement cho câu trả lời clinical, medical disclaimer.
-- **Caching/tracing**: Redis cache theo (query, filters); `Tracer` protocol cho observability.
+- **3-branch query understanding** (run in parallel for clinical questions):
+  - **MultiQueryRetriever** — `HeuristicVNRewriter` (VN synonym pairs) + `LLMQueryRewriter` (n=3).
+  - **HeuristicVNDecomposer** — splits multi-drug / drug × clinical-context questions into sub-queries.
+  - **HyDEGenerator** — generates a "hypothetical document" to boost recall (only enabled when `is_clinical_query`).
+- **Reranker**: **OpenRouterReranker** (Cohere `rerank-v3.5` by default, configurable via `RERANKER_MODEL`); a `Reranker` Protocol lets chat/disambiguation bind to the interface.
+- **Corrective RAG (CRAG)**: `TieredGrader` (heuristic first, LLM when ambiguous) classifies sufficient/ambiguous/insufficient → refuses when evidence is insufficient.
+- **Guardrails**: PII redaction, citation enforcement for clinical answers, medical disclaimer.
+- **Caching/tracing**: Redis cache keyed by (query, filters); a `Tracer` protocol for observability.
 
-## 3. KPIs mục tiêu
+## 3. Target KPIs
 
-| Chỉ số | Mục tiêu |
-|--------|----------|
-| VN-PharmBench (nội bộ) — accuracy | Vượt GPT-4 |
+| Metric | Target |
+|--------|--------|
+| VN-PharmBench (internal) — accuracy | Beat GPT-4 |
 | Hallucination rate (RAGAS faithfulness) | ≤ 3% |
-| Latency p95 (end-to-end RAG + LLM API) | ≤ 2 giây |
-| % câu trả lời có citation | 100% (clinical) |
+| p95 latency (end-to-end RAG + LLM API) | ≤ 2 s |
+| % of answers with a citation | 100% (clinical) |
 
-## 4. Tech stack & phiên bản
+## 4. Tech stack & versions
 
-| Lớp | Thành phần | Phiên bản |
-|-----|-----------|-----------|
+| Layer | Component | Version |
+|-------|-----------|---------|
 | Runtime | Python | ≥ 3.11 |
 | API | FastAPI / Uvicorn / Pydantic | ≥ 0.115 / ≥ 0.32 / ≥ 2.9 |
 | Embedding | sentence-transformers / FlagEmbedding (BGE-M3) | ≥ 3.2 / ≥ 1.3 |
@@ -47,12 +47,12 @@ PharmaGPT-VN là hệ **RAG chuyên ngành dược tiếng Việt**: grounding c
 | Vector DB | qdrant-client | ≥ 1.12 |
 | HTTP | httpx (OpenRouter) | ≥ 0.27 |
 | Cache | redis | ≥ 5.1 |
-| Khác | tiktoken / structlog | ≥ 0.8 / ≥ 24.4 |
+| Other | tiktoken / structlog | ≥ 0.8 / ≥ 24.4 |
 | Dev | pytest / pytest-asyncio / pytest-cov / ruff / mypy | ≥ 8.3 / — / ≥ 5.0 / ≥ 0.7 / ≥ 1.13 |
 
 **Docker services**: Qdrant v1.12.0 (dense + sparse), Redis 7-alpine.
 
-## 5. Cấu trúc thư mục
+## 5. Directory structure
 
 ```
 pharmagpt-vn/
@@ -100,15 +100,15 @@ pharmagpt-vn/
 └── .env.example
 ```
 
-## 6. Pipeline xử lý (ChatService.complete)
+## 6. Processing pipeline (ChatService.complete)
 
-1. **Refusal check** — phân loại OOD/harmful → từ chối nếu cần.
-2. **PII redaction** — `redact_pii` loại SĐT (kể cả tiền tố +84), CCCD, BHYT.
-3. **Retrieve** — nếu là câu hỏi lâm sàng: chạy song song 3 branch (rewrite + decompose + HyDE) → RRF (k=60) → top-50 chunks; nếu không: hybrid retrieve thường.
-4. **Rerank** — OpenRouterReranker (top-10); fallback giữ thứ tự nếu API lỗi.
-5. **CRAG grade** — `TieredGrader`; insufficient → từ chối + chuyển dược sĩ thật.
-6. **Generate** — build context + prompt (role "dược sĩ lâm sàng") → LLM API.
-7. **Validate** — citation, dosage sanity, drug name, tone.
+1. **Refusal check** — classify OOD/harmful → refuse if needed.
+2. **PII redaction** — `redact_pii` removes phone numbers (including +84 prefix), national ID (CCCD), insurance ID (BHYT).
+3. **Retrieve** — for clinical questions: run the 3 branches in parallel (rewrite + decompose + HyDE) → RRF (k=60) → top-50 chunks; otherwise plain hybrid retrieval.
+4. **Rerank** — OpenRouterReranker (top-10); falls back to retrieval order if the API fails.
+5. **CRAG grade** — `TieredGrader`; insufficient → refuse + refer to a real pharmacist.
+6. **Generate** — build context + prompt (role "clinical pharmacist") → LLM API.
+7. **Validate** — citations, dosage sanity, drug names, tone.
 
 ## 7. API contract
 
@@ -118,8 +118,8 @@ Body:
 {
   "model": "pharmagpt-vn-8b-instruct",
   "messages": [
-    {"role": "system", "content": "Bạn là trợ lý dược sĩ AI."},
-    {"role": "user", "content": "Metformin có dùng được cho người suy thận eGFR 35 không?"}
+    {"role": "system", "content": "You are an AI pharmacist assistant."},
+    {"role": "user", "content": "Can Metformin be used in a patient with eGFR 35?"}
   ],
   "temperature": 0.2,
   "max_tokens": 512,
@@ -135,7 +135,7 @@ Response:
     {
       "message": {
         "role": "assistant",
-        "content": "Theo hướng dẫn của Bộ Y tế (2023)... [1][2]",
+        "content": "According to MoH guidelines (2023)... [1][2]",
         "citations": [
           {"id": 1, "source": "HDDT-BYT-2023-0142", "page": 18},
           {"id": 2, "source": "duocdien-vn-v5", "monograph": "Metformin"}
@@ -149,28 +149,28 @@ Response:
 }
 ```
 
-Các endpoint khác: `POST /v1/embed` (BGE-M3), `POST /v1/disambiguate` (làm rõ câu hỏi mơ hồ), `GET /health`.
+Other endpoints: `POST /v1/embed` (BGE-M3), `POST /v1/disambiguate` (clarify ambiguous questions), `GET /health`.
 
-## 8. Khởi chạy
+## 8. Getting started
 
-### Yêu cầu
+### Requirements
 - Python 3.11+
-- Endpoint LLM tương thích OpenAI (URL + API key)
-- API key OpenRouter (reranker)
-- Qdrant + Redis (qua `docker compose`)
+- An OpenAI-compatible LLM endpoint (URL + API key)
+- An OpenRouter API key (reranker)
+- Qdrant + Redis (via `docker compose`)
 
 ### Setup
 ```bash
 cp .env.example .env
-# Điền OPENAI_BASE_URL, OPENAI_API_KEY, LLM_MODEL_MAIN, OPENROUTER_API_KEY
+# Fill in OPENAI_BASE_URL, OPENAI_API_KEY, LLM_MODEL_MAIN, OPENROUTER_API_KEY
 make install
 make services-up             # qdrant + redis
-make ingest-demo             # corpus mẫu (không cần GPU) — hoặc:
-make ingest-corpus           # nạp corpus y dược thật vào Qdrant
-make dev                     # FastAPI tại http://localhost:8003
+make ingest-demo             # sample corpus (no GPU) — or:
+make ingest-corpus           # load the real pharma corpus into Qdrant
+make dev                     # FastAPI at http://localhost:8003
 ```
 
-Ingest tùy biến:
+Custom ingest:
 ```bash
 python scripts/ingest_corpus.py --source corpus.jsonl \
   --qdrant-url http://localhost:6333 --collection vn_pharma_corpus \
@@ -179,45 +179,45 @@ python scripts/ingest_corpus.py --source corpus.jsonl \
 
 ### Test & evaluate
 ```bash
-make test                    # pytest + coverage (ngưỡng 80%)
+make test                    # pytest + coverage (80% threshold)
 make lint                    # ruff + mypy
-make eval                    # chạy VN-PharmBench
+make eval                    # run VN-PharmBench
 ```
 
-## 9. Cấu hình (.env)
+## 9. Configuration (.env)
 
-| Biến | Mục đích | Mặc định |
-|------|----------|----------|
+| Variable | Purpose | Default |
+|----------|---------|---------|
 | `APP_ENV` / `APP_PORT` / `LOG_LEVEL` | Runtime | development / 8003 / INFO |
-| `OPENAI_BASE_URL` | Endpoint LLM (OpenAI-compatible) | — |
-| `OPENAI_API_KEY` | API key LLM | — |
-| `LLM_MODEL_MAIN` | Model sinh chính | — |
-| `EMBEDDING_MODEL` / `EMBEDDER_DEVICE` | Model embedding / thiết bị | BAAI/bge-m3 / cpu |
+| `OPENAI_BASE_URL` | LLM endpoint (OpenAI-compatible) | — |
+| `OPENAI_API_KEY` | LLM API key | — |
+| `LLM_MODEL_MAIN` | Main generation model | — |
+| `EMBEDDING_MODEL` / `EMBEDDER_DEVICE` | Embedding model / device | BAAI/bge-m3 / cpu |
 | `OPENROUTER_API_KEY` / `OPENROUTER_BASE_URL` | Reranker | — / https://openrouter.ai/api/v1 |
-| `RERANKER_MODEL` | Model rerank | cohere/rerank-v3.5 |
+| `RERANKER_MODEL` | Rerank model | cohere/rerank-v3.5 |
 | `QDRANT_URL` / `QDRANT_API_KEY` / `QDRANT_COLLECTION` | Vector DB | http://localhost:6333 / — / vn_pharma_corpus |
 | `REDIS_URL` | Cache / rate-limit | redis://localhost:6379/0 |
-| `INTERNAL_API_TOKEN` | Secret xác thực API | — |
-| `ENFORCE_CITATIONS_FOR_CLINICAL` | Bắt buộc citation cho clinical | true |
-| `PII_REDACTION_ENABLED` | Bật redact PII | true |
-| `MEDICAL_DISCLAIMER_ENABLED` | Đính kèm disclaimer | true |
-| `DEFAULT_TEMPERATURE` / `DEFAULT_TOP_P` / `DEFAULT_MAX_TOKENS` | Tham số LLM | 0.2 / 0.9 / 512 |
-| `QU_REWRITE_N` | Số biến thể rewrite (branch A) | 3 |
-| `QU_DECOMPOSE_MAX` | Max sub-query (branch B) | 4 |
+| `INTERNAL_API_TOKEN` | API auth secret | — |
+| `ENFORCE_CITATIONS_FOR_CLINICAL` | Require citations for clinical answers | true |
+| `PII_REDACTION_ENABLED` | Enable PII redaction | true |
+| `MEDICAL_DISCLAIMER_ENABLED` | Append disclaimer | true |
+| `DEFAULT_TEMPERATURE` / `DEFAULT_TOP_P` / `DEFAULT_MAX_TOKENS` | LLM params | 0.2 / 0.9 / 512 |
+| `QU_REWRITE_N` | Number of rewrite variants (branch A) | 3 |
+| `QU_DECOMPOSE_MAX` | Max sub-queries (branch B) | 4 |
 | `QU_HYDE_ENABLED` / `QU_HYDE_MAX_TOKENS` | HyDE (branch C) | true / 256 |
-| `QU_PER_BRANCH_TOP_K` | Pool retrieval mỗi branch | 30 |
-| `QU_RRF_K` | Tham số RRF fusion | 60 |
+| `QU_PER_BRANCH_TOP_K` | Retrieval pool per branch | 30 |
+| `QU_RRF_K` | RRF fusion parameter | 60 |
 
-## 10. Guardrails y khoa
+## 10. Medical guardrails
 
-1. **PII redaction** — loại SĐT (gồm +84), CCCD (`\b\d{12}\b`), BHYT trước khi log.
-2. **Scope check** — câu hỏi ngoài dược chuyển hướng về dược sĩ thật.
-3. **Citation enforcement** — câu trả lời clinical bắt buộc ≥ 1 citation từ Qdrant.
-4. **Disclaimer** — đính kèm "AI hỗ trợ tham khảo, không thay thế chẩn đoán dược sĩ".
+1. **PII redaction** — strip phone numbers (incl. +84), national ID (`\b\d{12}\b`), insurance ID before logging.
+2. **Scope check** — non-pharma questions are redirected to a real pharmacist.
+3. **Citation enforcement** — clinical answers must include ≥ 1 citation from Qdrant.
+4. **Disclaimer** — appends "AI is for reference only, not a substitute for a pharmacist's diagnosis".
 
 ## 11. VN-PharmBench
 
-Bộ benchmark JSONL (`evaluation/benchmark.py`) theo các nhóm: `drug_info_basic`, `drug_info_advanced`, `dosage_adjustment`, `interactions`, `contraindications`, `otc_counseling`, `refusal`. Báo cáo: accuracy tổng, chất lượng citation, tỷ lệ refusal đúng, breakdown theo nhóm.
+A JSONL benchmark (`evaluation/benchmark.py`) across categories: `drug_info_basic`, `drug_info_advanced`, `dosage_adjustment`, `interactions`, `contraindications`, `otc_counseling`, `refusal`. Reports: overall accuracy, citation quality, correct-refusal rate, and a per-category breakdown.
 
 ## 12. Docker
 
@@ -228,6 +228,6 @@ docker build -t pharmagpt-vn . # build API image
 
 ## 13. Roadmap
 
-- **v0.1** (MVP): RAG cơ bản qua LLM API, latency 3s.
-- **v0.2**: Pipeline hoàn chỉnh (hybrid retrieve → 3-branch QU → rerank → CRAG → generate), latency 2s.
-- **v1.0**: Tool-use (gọi VietDrug AI làm tool), multi-turn dialogue.
+- **v0.1** (MVP): basic RAG via LLM API, 3s latency.
+- **v0.2**: full pipeline (hybrid retrieve → 3-branch QU → rerank → CRAG → generate), 2s latency.
+- **v1.0**: tool use (call VietDrug AI as a tool), multi-turn dialogue.
