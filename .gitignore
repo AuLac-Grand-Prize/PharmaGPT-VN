@@ -21,7 +21,15 @@ build/
 .env.local
 
 # Models, checkpoints, corpus — sync từ MinIO/HF mirror nội bộ
+# NOTE: this ignores ML-weight dirs named `models/` anywhere, but must NOT
+# swallow the Python source package `src/pharmagpt_vn/models/` (the LLM-client
+# package). The negation below keeps that source tree tracked.
 models/
+!src/pharmagpt_vn/models/
+!src/pharmagpt_vn/models/**
+# …but keep bytecode/caches ignored even inside the re-included source package.
+src/pharmagpt_vn/models/**/__pycache__/
+src/pharmagpt_vn/models/**/*.py[cod]
 data/raw/
 data/processed/
 data/corpus_vn_pharma/
