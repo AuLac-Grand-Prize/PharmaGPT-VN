@@ -74,20 +74,29 @@ def _compile_words(words: list[str]) -> re.Pattern[str]:
 
 
 # Self-harm / overdose-intent / illegal-use markers (VN + EN). Refused as unsafe.
+#
+# IMPORTANT: every entry must carry self-harm / overdose / illegal-use INTENT on
+# its own. Bare fragments built around the token "chết" (die) were removed
+# because they over-refuse legitimate oncology / pharmacology questions — e.g.
+# "cho chết tế bào ung thư" (kill cancer cells), "tiến triển đến chết tế bào"
+# (apoptosis). Likewise standalone "doping" / "chất cấm" over-refuse sports
+# drug-safety questions ("panadol có nằm trong danh sách doping không").
+# Overdose-to-die phrasing that needs proximity (asking *how much* to die) is
+# handled by _UNSAFE_PATTERNS below, not by a bare "để chết" substring.
 _UNSAFE_TERMS = [
     "tự tử",
     "tự sát",
+    "tự vẫn",
     "tự làm hại",
     "tự gây thương tích",
     "kết liễu",
-    "để chết",
-    "đến chết",
-    "cho chết",
     "liều gây chết",
     "liều gây tử vong",
     "liều chết người",
-    "quá liều để",
-    "để quá liều",
+    "liều tử vong",
+    "quá liều để chết",
+    "quá liều để tự tử",
+    "uống thuốc tự tử",
     "đầu độc",
     "gây mê người khác",
     "điều chế ma túy",
@@ -95,17 +104,30 @@ _UNSAFE_TERMS = [
     "nấu ma túy",
     "tổng hợp ma túy",
     "ma túy đá",
-    "chất cấm",
-    "doping",
     "suicide",
     "kill myself",
     "kill him",
     "kill her",
     "overdose to die",
     "lethal dose",
+    "fatal dose",
     "how to make meth",
     "make drugs",
     "poison someone",
+]
+
+# Overdose / self-harm INTENT that only shows up as a quantity-question paired
+# with a dying / self-harm word (e.g. "uống bao nhiêu paracetamol để chết?",
+# "how many pills to die"). Anchoring on the *intent* (asking a lethal quantity)
+# avoids the false positives a bare "để chết" / "đến chết" substring caused, while
+# still catching genuine overdose-to-die queries.
+_UNSAFE_PATTERNS = [
+    # VN: "bao nhiêu ... (chết | tử vong)" within a short window.
+    r"bao nhiêu\b.{0,40}\b(?:chết|tử vong)\b",
+    # VN: "mấy viên ... chết" (how many tablets ... die).
+    r"mấy\s+viên\b.{0,40}\bchết\b",
+    # EN: "how (much|many) ... (die|kill myself)".
+    r"how\s+(?:much|many)\b.{0,40}\b(?:die|kill myself)\b",
 ]
 
 # Clinical / pharma signal terms (VN + EN). Promote to clinical_safe.
@@ -211,8 +233,46 @@ _OUT_OF_SCOPE_TERMS = [
     "write code",
 ]
 
+# Common INN/generic-drug-name morphology. Many real questions name a branded or
+# unlisted drug that is not in the tiny _CLINICAL_TERMS INN list (e.g.
+# "Esomeprazole", "Augmentin", "Losartan", "Amlodipine"). These stems/suffixes
+# are strong, low-false-positive signals that the query is about a medicine, so a
+# match promotes the query to clinical (preventing an out_of_scope mis-refusal).
+# Anchored with a trailing word boundary so e.g. "-pril" matches "lisinopril" /
+# "enalapril" but not unrelated words.
+_DRUG_SUFFIXES = [
+    "prazole",   # esomeprazole, omeprazole, pantoprazole
+    "sartan",    # losartan, valsartan, telmisartan
+    "statin",    # atorvastatin, rosuvastatin, simvastatin
+    "cillin",    # amoxicillin, ampicillin, augmentin->amoxicillin
+    "mycin",     # azithromycin, clarithromycin, vancomycin
+    "dipine",    # amlodipine, nifedipine
+    "olol",      # metoprolol, atenolol, propranolol
+    "pril",      # lisinopril, enalapril, captopril
+    "floxacin",  # ciprofloxacin, levofloxacin
+    "azepam",    # diazepam, lorazepam
+    "tinib",     # imatinib, erlotinib (oncology TKIs)
+    "mab",       # monoclonal antibodies: trastuzumab, rituximab
+    "vir",       # antivirals: acyclovir, oseltamivir
+    "parin",     # heparin, enoxaparin
+    "glitazone",
+    "gliptin",   # sitagliptin, linagliptin
+    "tidine",    # ranitidine, famotidine, cimetidine
+    "cycline",   # doxycycline, tetracycline
+    "conazole",  # fluconazole, itraconazole
+]
+
 _UNSAFE_RE = _compile_words(_UNSAFE_TERMS)
+_UNSAFE_PATTERN_RE = re.compile(
+    "|".join(f"(?:{p})" for p in _UNSAFE_PATTERNS),
+    re.IGNORECASE | re.DOTALL,
+)
 _CLINICAL_RE = _compile_words(_CLINICAL_TERMS)
+# Suffix match: stem must end a word (letters then a non-letter / end of string).
+_DRUG_SUFFIX_RE = re.compile(
+    "|".join(rf"[a-z]*{re.escape(s)}(?![a-z])" for s in _DRUG_SUFFIXES),
+    re.IGNORECASE,
+)
 _HIGH_RISK_RE = _compile_words(_HIGH_RISK_TERMS)
 _OUT_OF_SCOPE_RE = _compile_words(_OUT_OF_SCOPE_TERMS)
 
@@ -245,9 +305,20 @@ class HeuristicRefusalClassifier:
                 confidence=0.95,
                 rationale="matched self-harm / illegal-use keyword",
             )
+        if _UNSAFE_PATTERN_RE.search(text):
+            return Classification(
+                label="unsafe",
+                confidence=0.9,
+                rationale="matched overdose / self-harm intent pattern",
+            )
 
-        if _CLINICAL_RE.search(text):
-            if _HIGH_RISK_RE.search(text):
+        high_risk = bool(_HIGH_RISK_RE.search(text))
+
+        # Clinical signal = an explicit pharma keyword OR a drug-name suffix, so
+        # branded / unlisted drugs (Esomeprazole, Augmentin, Losartan, Amlodipine)
+        # are recognised instead of falling through to out_of_scope.
+        if _CLINICAL_RE.search(text) or _DRUG_SUFFIX_RE.search(text):
+            if high_risk:
                 return Classification(
                     label="clinical_high_risk",
                     confidence=0.8,
@@ -256,7 +327,18 @@ class HeuristicRefusalClassifier:
             return Classification(
                 label="clinical_safe",
                 confidence=0.7,
-                rationale="matched clinical/pharma keyword",
+                rationale="matched clinical/pharma keyword or drug-name morphology",
+            )
+
+        # High-risk-population safety net: a pregnancy / breastfeeding / pediatric
+        # (etc.) question must never be refused as out_of_scope even when the drug
+        # name is unrecognised, so route it to clinical_high_risk BEFORE the
+        # out_of_scope rules below.
+        if high_risk:
+            return Classification(
+                label="clinical_high_risk",
+                confidence=0.7,
+                rationale="high-risk population/window — routed to clinical before out_of_scope",
             )
 
         if _OUT_OF_SCOPE_RE.search(text):
