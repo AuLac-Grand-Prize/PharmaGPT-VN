@@ -1,0 +1,17 @@
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.git
+.github
+coverage
+htmlcov
+.coverage
+*.log
+.env*
+!.env.example
+data/
+runs/
